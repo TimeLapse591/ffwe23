@@ -1,27 +1,35 @@
-name: Legit Reverse SSH Tunnel
+name: Ubuntu GUI + AnyDesk
 
 on:
   workflow_dispatch:
 
 jobs:
-  vps:
+  ubuntu-desktop:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: SSH ve bağlantı ayarları
+      - name: GUI Ortamını Kur (xfce4)
         run: |
           sudo apt update
-          sudo apt install -y openssh-server
-          sudo systemctl start ssh
-          echo "root:githubvps" | sudo chpasswd
-          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
+          sudo apt install -y xfce4 xfce4-goodies x11vnc dbus-x11
 
-      - name: Reverse SSH tüneli kur
+      - name: AnyDesk Kurulumu
         run: |
-          mkdir -p ~/.ssh
-          echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no -R 2222:localhost:22 $REMOTE_USER@$REMOTE_HOST
+          wget -qO - https://keys.anydesk.com/repos/DEB-GPG-KEY | sudo apt-key add -
+          echo "deb http://deb.anydesk.com/ all main" | sudo tee /etc/apt/sources.list.d/anydesk.list
+          sudo apt update
+          sudo apt install -y anydesk
+          sudo systemctl start anydesk
+
+      - name: AnyDesk ID’yi Göster
+        run: |
+          sleep 10
+          echo "🔗 AnyDesk ID:"
+          anydesk --get-id || echo "AnyDesk ID alınamadı (GUI devre dışı olabilir)"
+
+      - name: Sistem Bilgisi
+        run: |
+          echo "RAM ve CPU:"
+          free -h
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core'

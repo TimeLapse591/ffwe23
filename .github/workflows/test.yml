@@ -1,20 +1,31 @@
-name: Ubuntu GUI + AnyDesk
+name: Ubuntu GUI VPS - AnyDesk + Otomatik Ayarlar
 
 on:
   workflow_dispatch:
 
 jobs:
-  ubuntu-desktop:
+  ubuntu-vps:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: GUI Ortamını Kur (xfce4)
+      - name: 🌐 Statik IP Simülasyonu
+        run: |
+          echo "⚠️ GitHub Actions IP adresi dinamiktir. Statik atanamaz."
+          ip a
+
+      - name: ⚙️ Sistem Bilgisi ve CPU Ayarı
+        run: |
+          echo "🔧 İşlemci Bilgisi:"
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core'
+          echo "💡 Çekirdek sayısını tespit ettik: $(nproc) çekirdek"
+
+      - name: 🖥️ Masaüstü (GUI xfce4) Kurulumu
         run: |
           sudo apt update
           sudo apt install -y xfce4 xfce4-goodies x11vnc dbus-x11
 
-      - name: AnyDesk Kurulumu
+      - name: 🧩 AnyDesk Kurulumu
         run: |
           wget -qO - https://keys.anydesk.com/repos/DEB-GPG-KEY | sudo apt-key add -
           echo "deb http://deb.anydesk.com/ all main" | sudo tee /etc/apt/sources.list.d/anydesk.list
@@ -22,14 +33,16 @@ jobs:
           sudo apt install -y anydesk
           sudo systemctl start anydesk
 
-      - name: AnyDesk ID’yi Göster
+      - name: 🆔 AnyDesk ID Göster
         run: |
           sleep 10
-          echo "🔗 AnyDesk ID:"
-          anydesk --get-id || echo "AnyDesk ID alınamadı (GUI devre dışı olabilir)"
+          echo "🎯 AnyDesk ID:"
+          anydesk --get-id || echo "🛑 GUI ortamı henüz aktif değil olabilir."
 
-      - name: Sistem Bilgisi
+      - name: 🧪 Bağlantı Bilgisi (IP)
         run: |
-          echo "RAM ve CPU:"
-          free -h
-          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core'
+          echo "🌐 Dış IP adresi:"
+          curl -s https://ipinfo.io/ip || echo "IP alınamadı"
+
+      - name: 🧼 Son
+        run: echo "✅ Kurulum tamam. Bağlantı için AnyDesk ID'yi kullanabilirsin."

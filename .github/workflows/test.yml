@@ -1,0 +1,27 @@
+name: Legit Reverse SSH Tunnel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: SSH ve bağlantı ayarları
+        run: |
+          sudo apt update
+          sudo apt install -y openssh-server
+          sudo systemctl start ssh
+          echo "root:githubvps" | sudo chpasswd
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+
+      - name: Reverse SSH tüneli kur
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -o StrictHostKeyChecking=no -R 2222:localhost:22 $REMOTE_USER@$REMOTE_HOST

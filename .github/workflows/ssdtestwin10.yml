@@ -1,0 +1,54 @@
+name: Windows - RustDesk SSD Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rustdesk-install:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 🧰 Gerekli Bilgileri Yazdır
+        run: |
+          systeminfo
+          Get-PSDrive C
+
+      - name: 💾 C:\'ye RustDesk Kurulumu (SSD)
+        run: |
+          $installPath = "C:\Program Files\RustDesk"
+          $installerPath = "$env:TEMP\rustdesk-installer.exe"
+
+          # Klasör oluştur
+          if (!(Test-Path $installPath)) {
+              New-Item -ItemType Directory -Path $installPath | Out-Null
+          }
+
+          # RustDesk indir
+          Invoke-WebRequest -Uri "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk-installer.exe" -OutFile $installerPath
+
+          # Sessiz kur
+          Start-Process $installerPath -ArgumentList "/VERYSILENT /DIR=`"$installPath`"" -Wait
+
+          # Başlangıca ekle
+          $shortcut = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\rustdesk.lnk"
+          $exePath = "$installPath\rustdesk.exe"
+          if (Test-Path $exePath) {
+              $shell = New-Object -ComObject WScript.Shell
+              $shortcutObject = $shell.CreateShortcut($shortcut)
+              $shortcutObject.TargetPath = $exePath
+              $shortcutObject.Save()
+          }
+
+      - name: 🆔 RustDesk ID Göster (Varsa)
+        run: |
+          $conf = "$env:APPDATA\RustDesk\config\RustDesk.toml"
+          if (Test-Path $conf) {
+            Get-Content $conf
+          } else {
+            Write-Output "RustDesk yapılandırması henüz oluşmamış olabilir. Bağlantı açıldıktan sonra oluşur."
+          }
+
+      - name: ⏱️ Sayaç (opsiyonel)
+        run: |
+          python -c "import time; [print(f'⏳ {i} dk') or time.sleep(60) for i in range(1, 9999)]"

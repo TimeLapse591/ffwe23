@@ -15,6 +15,7 @@ jobs:
           Get-PSDrive C
 
       - name: RustDesk Kurulumu (Gerçek SSD - C:\)
+        shell: pwsh
         run: |
           $installPath = "C:\Program Files\RustDesk"
           $installerPath = "$env:TEMP\rustdesk-installer.exe"
@@ -23,7 +24,17 @@ jobs:
               New-Item -ItemType Directory -Path $installPath | Out-Null
           }
 
-          Invoke-WebRequest -Uri "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk-installer.exe" -OutFile $installerPath
+          # En son sürüm numarasını al
+          $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
+          $version = $latest.tag_name
+          Write-Output "Son sürüm: $version"
+
+          # İndirme URL'sini oluştur
+          $downloadUrl = "https://github.com/rustdesk/rustdesk/releases/download/$version/rustdesk-$($version)-windows_x64-installer.exe"
+          Write-Output "İndiriliyor: $downloadUrl"
+
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
+
           Start-Process -FilePath $installerPath -ArgumentList "/VERYSILENT /DIR=""$installPath""" -Wait
 
           $exePath = "$installPath\rustdesk.exe"
@@ -43,9 +54,9 @@ jobs:
           if (Test-Path $conf) {
               Get-Content $conf
           } else {
-              Write-Output "RustDesk ayar dosyası yok. Program ilk kez çalıştıktan sonra oluşur."
+              Write-Output "RustDesk yapılandırma dosyası henüz oluşmamış olabilir."
           }
 
-      - name: Süreyi Uzat (Sayaç)
+      - name: Süreyi Uzat
         run: |
           python -c "import time; [print(f'⏳ {i} dk') or time.sleep(60) for i in range(1, 9999)]"

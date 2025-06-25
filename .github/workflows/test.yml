@@ -1,48 +1,125 @@
-name: Ubuntu GUI VPS - AnyDesk + Otomatik Ayarlar
+name: Complete Ubuntu VPS Setup
 
 on:
   workflow_dispatch:
+    inputs:
+      ssh_port:
+        description: 'New SSH Port (default: 2222)'
+        required: false
+        default: '2222'
+      timezone:
+        description: 'Timezone (default: Europe/Istanbul)'
+        required: false
+        default: 'Europe/Istanbul'
+      swap_size:
+        description: 'Swap Size (e.g. 2G)'
+        required: false
+        default: '2G'
+
+env:
+  NEW_USER: githubadmin
+  DOCKER_VERSION: 20.10.23
 
 jobs:
-  ubuntu-vps:
+  setup-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-
     steps:
-      - name: 🌐 Statik IP Simülasyonu
-        run: |
-          echo "⚠️ GitHub Actions IP adresi dinamiktir. Statik atanamaz."
-          ip a
-
-      - name: ⚙️ Sistem Bilgisi ve CPU Ayarı
-        run: |
-          echo "🔧 İşlemci Bilgisi:"
-          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core'
-          echo "💡 Çekirdek sayısını tespit ettik: $(nproc) çekirdek"
-
-      - name: 🖥️ Masaüstü (GUI xfce4) Kurulumu
-        run: |
-          sudo apt update
-          sudo apt install -y xfce4 xfce4-goodies x11vnc dbus-x11
-
-      - name: 🧩 AnyDesk Kurulumu
-        run: |
-          wget -qO - https://keys.anydesk.com/repos/DEB-GPG-KEY | sudo apt-key add -
-          echo "deb http://deb.anydesk.com/ all main" | sudo tee /etc/apt/sources.list.d/anydesk.list
-          sudo apt update
-          sudo apt install -y anydesk
-          sudo systemctl start anydesk
-
-      - name: 🆔 AnyDesk ID Göster
-        run: |
-          sleep 10
-          echo "🎯 AnyDesk ID:"
-          anydesk --get-id || echo "🛑 GUI ortamı henüz aktif değil olabilir."
-
-      - name: 🧪 Bağlantı Bilgisi (IP)
-        run: |
-          echo "🌐 Dış IP adresi:"
-          curl -s https://ipinfo.io/ip || echo "IP alınamadı"
-
-      - name: 🧼 Son
-        run: echo "✅ Kurulum tamam. Bağlantı için AnyDesk ID'yi kullanabilirsin."
+    - name: SSH into server and perform complete setup
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.VPS_IP }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT || '22' }}
+        script: |
+          # 1. System Update
+          echo "⏳ Updating system packages..."
+          sudo apt-get update -qq && sudo apt-get upgrade -y -qq
+          
+          # 2. Install Essential Tools
+          echo "🛠️ Installing essential tools..."
+          sudo apt-get install -y -qq git curl wget ufw htop unzip gnupg2 ca-certificates lsb-release
+          
+          # 3. Security Configuration
+          echo "🔒 Configuring security settings..."
+          NEW_SSH_PORT=${{ github.event.inputs.ssh_port }}
+          sudo sed -i "s/#Port 22/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
+          sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sudo systemctl restart sshd
+          
+          # 4. Firewall Setup
+          echo "🔥 Configuring firewall..."
+          sudo ufw allow $NEW_SSH_PORT/tcp
+          sudo ufw allow 80/tcp
+          sudo ufw allow 443/tcp
+          sudo ufw --force enable
+          
+          # 5. Create New User
+          echo "👤 Creating new user..."
+          sudo adduser --disabled-password --gecos "" $NEW_USER
+          sudo usermod -aG sudo $NEW_USER
+          sudo mkdir -p /home/$NEW_USER/.ssh
+          sudo cp /root/.ssh/authorized_keys /home/$NEW_USER/.ssh/
+          sudo chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh
+          sudo chmod 700 /home/$NEW_USER/.ssh
+          sudo chmod 600 /home/$NEW_USER/.ssh/authorized_keys
+          
+          # 6. System Configuration
+          echo "⚙️ Configuring system settings..."
+          sudo timedatectl set-timezone ${{ github.event.inputs.timezone }}
+          
+          # 7. Swap Configuration
+          echo "💾 Setting up swap file..."
+          SWAP_SIZE=${{ github.event.inputs.swap_size }}
+          sudo fallocate -l $SWAP_SIZE /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+          echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+          sudo sysctl -p
+          
+          # 8. Install Docker
+          echo "🐳 Installing Docker..."
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+          sudo usermod -aG docker $NEW_USER
+          
+          # 9. Install Nginx
+          echo "🖥️ Installing Nginx..."
+          sudo apt-get install -y -qq nginx
+          sudo systemctl enable nginx
+          sudo systemctl start nginx
+          
+          # 10. Install GitHub CLI
+          echo "🐙 Installing GitHub CLI..."
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gh
+          
+          # 11. Configure Automatic Updates
+          echo "🔄 Configuring automatic updates..."
+          sudo apt-get install -y -qq unattended-upgrades
+          echo 'Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}";
+              "${distro_id}:${distro_codename}-security";
+              "${distro_id}ESM:${distro_codename}";
+          };' | sudo tee /etc/apt/apt.conf.d/50unattended-upgrades
+          echo 'Unattended-Upgrade::Automatic-Reboot "true";
+          Unattended-Upgrade::Automatic-Reboot-Time "02:00";' | sudo tee -a /etc/apt/apt.conf.d/50unattended-upgrades
+          
+          # 12. Clean Up
+          echo "🧹 Cleaning up..."
+          sudo apt-get autoremove -y -qq
+          sudo apt-get clean -qq
+          
+          # 13. Completion Message
+          echo "🎉 Setup completed successfully!"
+          echo "🔑 New SSH Port: $NEW_SSH_PORT"
+          echo "👤 New User: $NEW_USER"
+          echo "📌 Connect with: ssh -p $NEW_SSH_PORT $NEW_USER@${{ secrets.VPS_IP }}"

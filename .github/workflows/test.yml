@@ -1,125 +1,231 @@
-name: Complete Ubuntu VPS Setup
+name: Windows Server 2022 Datacenter 22H2 Full Setup
 
 on:
   workflow_dispatch:
     inputs:
-      ssh_port:
-        description: 'New SSH Port (default: 2222)'
-        required: false
-        default: '2222'
-      timezone:
-        description: 'Timezone (default: Europe/Istanbul)'
-        required: false
-        default: 'Europe/Istanbul'
-      swap_size:
-        description: 'Swap Size (e.g. 2G)'
-        required: false
-        default: '2G'
+      admin_password:
+        description: 'Administrator Password'
+        required: true
+      product_key:
+        description: 'Windows Server 2022 Product Key'
+        required: true
+        default: 'WX4NM-KYWYW-QJJR4-XV3QB-6VM33'
 
 env:
-  NEW_USER: githubadmin
-  DOCKER_VERSION: 20.10.23
+  VIRTUAL_MACHINE_NAME: "WinServer2022-DC"
+  SSD_SIZE_GB: 60
+  RAM_SIZE_GB: 16
+  CPU_CORES: 4
 
 jobs:
-  setup-server:
-    runs-on: ubuntu-latest
+  deploy:
+    runs-on: windows-latest
     steps:
-    - name: SSH into server and perform complete setup
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.VPS_IP }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: ${{ secrets.SSH_PORT || '22' }}
-        script: |
-          # 1. System Update
-          echo "⏳ Updating system packages..."
-          sudo apt-get update -qq && sudo apt-get upgrade -y -qq
-          
-          # 2. Install Essential Tools
-          echo "🛠️ Installing essential tools..."
-          sudo apt-get install -y -qq git curl wget ufw htop unzip gnupg2 ca-certificates lsb-release
-          
-          # 3. Security Configuration
-          echo "🔒 Configuring security settings..."
-          NEW_SSH_PORT=${{ github.event.inputs.ssh_port }}
-          sudo sed -i "s/#Port 22/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
-          sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-          sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-          sudo systemctl restart sshd
-          
-          # 4. Firewall Setup
-          echo "🔥 Configuring firewall..."
-          sudo ufw allow $NEW_SSH_PORT/tcp
-          sudo ufw allow 80/tcp
-          sudo ufw allow 443/tcp
-          sudo ufw --force enable
-          
-          # 5. Create New User
-          echo "👤 Creating new user..."
-          sudo adduser --disabled-password --gecos "" $NEW_USER
-          sudo usermod -aG sudo $NEW_USER
-          sudo mkdir -p /home/$NEW_USER/.ssh
-          sudo cp /root/.ssh/authorized_keys /home/$NEW_USER/.ssh/
-          sudo chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh
-          sudo chmod 700 /home/$NEW_USER/.ssh
-          sudo chmod 600 /home/$NEW_USER/.ssh/authorized_keys
-          
-          # 6. System Configuration
-          echo "⚙️ Configuring system settings..."
-          sudo timedatectl set-timezone ${{ github.event.inputs.timezone }}
-          
-          # 7. Swap Configuration
-          echo "💾 Setting up swap file..."
-          SWAP_SIZE=${{ github.event.inputs.swap_size }}
-          sudo fallocate -l $SWAP_SIZE /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-          echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
-          sudo sysctl -p
-          
-          # 8. Install Docker
-          echo "🐳 Installing Docker..."
-          sudo mkdir -p /etc/apt/keyrings
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-          sudo usermod -aG docker $NEW_USER
-          
-          # 9. Install Nginx
-          echo "🖥️ Installing Nginx..."
-          sudo apt-get install -y -qq nginx
-          sudo systemctl enable nginx
-          sudo systemctl start nginx
-          
-          # 10. Install GitHub CLI
-          echo "🐙 Installing GitHub CLI..."
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gh
-          
-          # 11. Configure Automatic Updates
-          echo "🔄 Configuring automatic updates..."
-          sudo apt-get install -y -qq unattended-upgrades
-          echo 'Unattended-Upgrade::Allowed-Origins {
-              "${distro_id}:${distro_codename}";
-              "${distro_id}:${distro_codename}-security";
-              "${distro_id}ESM:${distro_codename}";
-          };' | sudo tee /etc/apt/apt.conf.d/50unattended-upgrades
-          echo 'Unattended-Upgrade::Automatic-Reboot "true";
-          Unattended-Upgrade::Automatic-Reboot-Time "02:00";' | sudo tee -a /etc/apt/apt.conf.d/50unattended-upgrades
-          
-          # 12. Clean Up
-          echo "🧹 Cleaning up..."
-          sudo apt-get autoremove -y -qq
-          sudo apt-get clean -qq
-          
-          # 13. Completion Message
-          echo "🎉 Setup completed successfully!"
-          echo "🔑 New SSH Port: $NEW_SSH_PORT"
-          echo "👤 New User: $NEW_USER"
-          echo "📌 Connect with: ssh -p $NEW_SSH_PORT $NEW_USER@${{ secrets.VPS_IP }}"
+    - name: Download Windows Server 2022 22H2 ISO
+      run: |
+        $progressPreference = 'silentlyContinue'
+        $isoUrl = "https://software-download.microsoft.com/download/pr/20348.169.210806-2348.fe_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso"
+        $isoPath = "$env:RUNNER_TEMP\WinServer2022.iso"
+        Invoke-WebRequest -Uri $isoUrl -OutFile $isoPath
+        Write-Host "ISO downloaded to $isoPath"
+
+    - name: Create Hyper-V Virtual Machine
+      run: |
+        # Sanal makine oluşturma (Gerçek sunucuda bu adım atlanır)
+        New-VM -Name $env:VIRTUAL_MACHINE_NAME -MemoryStartupBytes ($env:RAM_SIZE_GB*1GB) -BootDevice VHD -NewVHDPath "$env:RUNNER_TEMP\win2022.vhdx" -NewVHDSizeBytes ($env:SSD_SIZE_GB*1GB) -Generation 2
+        Set-VMProcessor -VMName $env:VIRTUAL_MACHINE_NAME -Count $env:CPU_CORES
+        Add-VMDvdDrive -VMName $env:VIRTUAL_MACHINE_NAME -Path "$env:RUNNER_TEMP\WinServer2022.iso"
+        Start-VM -Name $env:VIRTUAL_MACHINE_NAME
+
+    - name: Generate Autounattend.xml
+      run: |
+        $unattendContent = @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+    <settings pass="windowsPE">
+        <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <UserData>
+                <AcceptEula>true</AcceptEula>
+                <FullName>Admin</FullName>
+                <Organization>GitHub</Organization>
+                <ProductKey>
+                    <Key>${{ github.event.inputs.product_key }}</Key>
+                </ProductKey>
+            </UserData>
+            <DiskConfiguration>
+                <Disk wcm:action="add">
+                    <DiskID>0</DiskID>
+                    <WillWipeDisk>true</WillWipeDisk>
+                    <CreatePartitions>
+                        <CreatePartition wcm:action="add">
+                            <Order>1</Order>
+                            <Size>500</Size>
+                            <Type>Primary</Type>
+                        </CreatePartition>
+                        <CreatePartition wcm:action="add">
+                            <Order>2</Order>
+                            <Extend>true</Extend>
+                            <Type>Primary</Type>
+                        </CreatePartition>
+                    </CreatePartitions>
+                    <ModifyPartitions>
+                        <ModifyPartition wcm:action="add">
+                            <Order>1</Order>
+                            <PartitionID>1</PartitionID>
+                            <Label>System</Label>
+                            <Format>NTFS</Format>
+                            <Active>true</Active>
+                        </ModifyPartition>
+                        <ModifyPartition wcm:action="add">
+                            <Order>2</Order>
+                            <PartitionID>2</PartitionID>
+                            <Label>Windows</Label>
+                            <Format>NTFS</Format>
+                            <Letter>C</Letter>
+                        </ModifyPartition>
+                    </ModifyPartitions>
+                </Disk>
+            </DiskConfiguration>
+            <ImageInstall>
+                <OSImage>
+                    <InstallTo>
+                        <DiskID>0</DiskID>
+                        <PartitionID>2</PartitionID>
+                    </InstallTo>
+                    <InstallToAvailablePartition>false</InstallToAvailablePartition>
+                    <WillShowUI>OnError</WillShowUI>
+                </OSImage>
+            </ImageInstall>
+        </component>
+    </settings>
+    <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <ComputerName>WIN-SERVER-2022</ComputerName>
+            <RegisteredOrganization>GitHub</RegisteredOrganization>
+            <RegisteredOwner>Admin</RegisteredOwner>
+            <TimeZone>Turkey Standard Time</TimeZone>
+        </component>
+    </settings>
+    <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <OOBE>
+                <HideEULAPage>true</HideEULAPage>
+                <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+                <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+                <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+                <NetworkLocation>Work</NetworkLocation>
+                <ProtectYourPC>1</ProtectYourPC>
+            </OOBE>
+            <UserAccounts>
+                <AdministratorPassword>
+                    <Value>${{ github.event.inputs.admin_password }}</Value>
+                    <PlainText>true</PlainText>
+                </AdministratorPassword>
+            </UserAccounts>
+        </component>
+    </settings>
+</unattend>
+"@
+        Set-Content -Path "$env:RUNNER_TEMP\autounattend.xml" -Value $unattendContent
+
+    - name: Install Windows Server 2022
+      run: |
+        # Bu adım gerçek ortamda sunucu sağlayıcınızın API'si ile yapılmalı
+        # Örnek olarak Hyper-V'de kurulum:
+        Mount-DiskImage -ImagePath "$env:RUNNER_TEMP\WinServer2022.iso"
+        $driveLetter = (Get-DiskImage -ImagePath "$env:RUNNER_TEMP\WinServer2022.iso" | Get-Volume).DriveLetter
+        Copy-Item "$env:RUNNER_TEMP\autounattend.xml" "${driveLetter}:\autounattend.xml"
+        Dismount-DiskImage -ImagePath "$env:RUNNER_TEMP\WinServer2022.iso"
+
+    - name: Configure Server via WinRM
+      run: |
+        $securePassword = ConvertTo-SecureString "${{ github.event.inputs.admin_password }}" -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ("Administrator", $securePassword)
+        
+        # WinRM bağlantısı için 5 dakika bekle
+        Start-Sleep -Seconds 300
+        
+        Invoke-Command -ComputerName "${{ secrets.WINDOWS_SERVER_IP }}" -Credential $credential -ScriptBlock {
+            # 1. Windows Update Servisini Etkinleştir
+            Set-Service -Name wuauserv -StartupType Automatic
+            Start-Service -Name wuauserv
+            
+            # 2. Güç ayarlarını Yüksek Performansa ayarla
+            powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+            
+            # 3. Uzak Masaüstünü Etkinleştir
+            Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+            Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+            
+            # 4. RustDesk Kurulumu
+            $rustdeskUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.2.3/rustdesk-1.2.3-x86_64.exe"
+            $installerPath = "$env:TEMP\rustdesk-setup.exe"
+            Invoke-WebRequest -Uri $rustdeskUrl -OutFile $installerPath -UseBasicParsing
+            Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+            
+            # 5. RustDesk Yapılandırması
+            $configDir = "$env:ProgramFiles\RustDesk\config"
+            if (!(Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir }
+            @"
+rendezvous_server = "hk1-rustdesk-server.com"
+nat_type = 1
+"@ | Out-File -FilePath "$configDir\RustDesk.toml" -Encoding ascii
+            
+            # 6. RustDesk Servis Olarak Çalıştır
+            New-Service -Name "RustDesk" -BinaryPathName "`"$env:ProgramFiles\RustDesk\rustdesk.exe`" --service" -DisplayName "RustDesk Service" -StartupType Automatic
+            Start-Service -Name "RustDesk"
+            
+            # 7. Güvenlik Duvarı Kuralları
+            New-NetFirewallRule -DisplayName "RustDesk" -Direction Inbound -Program "$env:ProgramFiles\RustDesk\rustdesk.exe" -Action Allow
+            
+            # 8. SSD Optimizasyonu
+            Optimize-Volume -DriveLetter C -ReTrim -Defrag -Verbose
+            fsutil behavior set DisableDeleteNotify 0
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "NtfsDisableLastAccessUpdate" -Value 1
+            
+            # 9. Aktifleştirme
+            $productKey = "${{ github.event.inputs.product_key }}"
+            cscript //B C:\Windows\System32\slmgr.vbs /ipk $productKey
+            cscript //B C:\Windows\System32\slmgr.vbs /ato
+            
+            # 10. Başlangıçta RustDesk Çalıştır
+            $wshShell = New-Object -ComObject WScript.Shell
+            $shortcut = $wshShell.CreateShortcut("$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\RustDesk.lnk")
+            $shortcut.TargetPath = "$env:ProgramFiles\RustDesk\rustdesk.exe"
+            $shortcut.Save()
+        }
+
+    - name: Verify Installation
+      run: |
+        $securePassword = ConvertTo-SecureString "${{ github.event.inputs.admin_password }}" -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ("Administrator", $securePassword)
+        
+        $result = Invoke-Command -ComputerName "${{ secrets.WINDOWS_SERVER_IP }}" -Credential $credential -ScriptBlock {
+            $os = Get-WmiObject Win32_OperatingSystem
+            $rustdesk = Get-Process rustdesk -ErrorAction SilentlyContinue
+            $activation = cscript //B C:\Windows\System32\slmgr.vbs /dli
+            
+            return @{
+                OSVersion = $os.Caption
+                RustDeskRunning = ($rustdesk -ne $null)
+                ActivationStatus = $activation
+                DiskSize = (Get-Volume -DriveLetter C).Size
+                FreeSpace = (Get-Volume -DriveLetter C).SizeRemaining
+                RAM = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+                CPU = (Get-CimInstance Win32_Processor).NumberOfCores
+            }
+        }
+        
+        Write-Host "=== Kurulum Doğrulama ==="
+        Write-Host "OS Version: $($result.OSVersion)"
+        Write-Host "Disk Size: $([math]::Round($result.DiskSize/1GB, 2)) GB"
+        Write-Host "Free Space: $([math]::Round($result.FreeSpace/1GB, 2)) GB"
+        Write-Host "RAM: $([math]::Round($result.RAM/1GB, 2)) GB"
+        Write-Host "CPU Cores: $($result.CPU)"
+        Write-Host "RustDesk Running: $($result.RustDeskRunning)"
+        Write-Host "Activation Status: $($result.ActivationStatus)"
+        
+        if (-not $result.RustDeskRunning) {
+            Write-Error "RustDesk failed to start"
+            exit 1
+        }

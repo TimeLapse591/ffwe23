@@ -1,15 +1,47 @@
-# Use a base image that supports systemd, for example, Ubuntu
-FROM ubuntu:20.04
+name: GeyserMC BoxPvP Server
 
-# Install necessary packages
-RUN apt-get update && \
-apt-get install -y shellinabox && \
-apt-get install -y systemd && \
-apt-get clean && \
-rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-RUN echo 'root:root' | chpasswd
-# Expose the web-based terminal port
-EXPOSE 4200
+on:
+  push:
+    branches: [ main ]
 
-# Start shellinabox
-CMD ["/usr/bin/shellinaboxd", "-t", "-s", "/:LOGIN"]Copied!
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Repo’yu klonla
+      uses: actions/checkout@v3
+
+    - name: Java 17 Kur
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: PaperMC + GeyserMC indir
+      run: |
+        mkdir server && cd server
+        curl -o paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/162/downloads/paper-1.20.1-162.jar
+        echo "eula=true" > eula.txt
+        mkdir plugins
+        curl -Lo plugins/Geyser-Spigot.jar https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+        curl -Lo plugins/Floodgate-Spigot.jar https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
+
+    - name: Harita ve pluginleri kopyala
+      run: |
+        cp -r plugins/* server/plugins/
+        cp -r world server/world
+        cp server.properties server/
+        cp eula.txt server/
+
+    - name: Sunucuyu Başlat
+      run: |
+        cd server
+        java -Xmx2G -Xms1G -jar paper.jar nogui &
+
+    - name: Discord Webhook Bildirimi
+      if: always()
+      run: |
+        curl -H "Content-Type: application/json" \
+          -X POST \
+          -d '{"content":"✅ Geyser‑destekli BoxPvP sunucusu hazır! Harita ve pluginler yüklendi."}' \
+          ${{ secrets.DISCORD_WEBHOOK }}
